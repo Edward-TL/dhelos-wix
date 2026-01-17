@@ -1,0 +1,9 @@
+functions-framework
+flask
+google-api-python-client
+google-auth
+openpyxl
+pandas
+pyarrow
+python-dotenv
+gspread
