@@ -40,7 +40,13 @@ from flask_responses import (
     skipped_response
 )
 
-load_dotenv()
+try:
+    load_dotenv()
+except Exception as e:
+    return error_response(
+        f"Failed to load environment variables: {str(e)}",
+        wix_source_flag="UNKNOWN"
+    )
 
 @functions_http
 def load_to_drive(request: FlaskRequest) -> FlaskResponse:

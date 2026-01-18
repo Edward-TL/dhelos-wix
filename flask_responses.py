@@ -5,7 +5,14 @@ import json
 import os
 import requests
 
-load_dotenv()
+try:
+    load_dotenv()
+except Exception as e:
+    return error_response(
+        f"Failed to load environment variables: {str(e)}",
+        wix_source_flag="UNKNOWN"
+    )
+
 
 def send_discord_message(message: str, level: str, wix_source_flag: str) -> None:
     """
