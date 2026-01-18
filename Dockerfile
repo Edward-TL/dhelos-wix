@@ -6,7 +6,7 @@
 FROM python:3.13-slim
 
 # Establece el directorio de trabajo dentro del contenedor
-WORKDIR /cloud-run-and-drive
+WORKDIR /dhelos-wix
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends git && \

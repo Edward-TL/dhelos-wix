@@ -14,6 +14,18 @@ def error_response(message: str, status: int = 500) -> FlaskResponse:
         mimetype='application/json'
     )
 
+def bad_resquest_response(message: str, status: int = 404) -> FlaskResponse:
+    """
+    Returns a Flask Response with an error message and status code.
+    Prints the message before returning.
+    """
+    print(f"ERROR: {message}")
+    return FlaskResponse(
+        json.dumps({"error": message}),
+        status=status,
+        mimetype='application/json'
+    )
+
 def success_response(message: str, data: dict = None, status: int = 200) -> FlaskResponse:
     """
     Returns a Flask Response with a success status, message, and optional data.

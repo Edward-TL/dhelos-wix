@@ -35,6 +35,7 @@ from helpers import (
 
 from flask_responses import (
     error_response,
+    bad_resquest_response,
     success_response,
     skipped_response
 )
@@ -57,41 +58,50 @@ def load_to_drive(request: FlaskRequest) -> FlaskResponse:
     if bad_response is not None:
         return bad_response
 
+    # Flatten the nested dictionary
+    flat_data = flat_dictionary(data.get('data', {}))
+    info = {
+        'flat_data': flat_data,
+        'raw_data': data
+    }
+
+    wix_triger = flat_data.get('_context_trigger_key')
+    if wix_triger is None:
+        return bad_resquest_response(
+            f"Failed to extract `_context_trigger_key` from response: {str(e)}"
+        )
+
     # Load configuration
     try:
-        
-        file_name = os.getenv("FILE_NAME")
-        folder_id = os.getenv("GOOGLE_DRIVE_FOLDER_ID")
-        compare_column = os.getenv("PLAN_ORDER_ID")
-        parquet_file_id = os.getenv("PARQUET_FILE_ID")
-        excel_file_id = os.getenv("EXCEL_FILE_ID")
+        OAUTH_TOKEN = json.loads(
+            os.getenv("OAUTH_TOKEN")
+        )
+        FOLDER_ID = os.getenv("GOOGLE_DRIVE_FOLDER_ID")
 
-        login_method = os.getenv("LOGIN_METHOD")
+        config = json.loads(
+            os.getenv("CONFIG")
+        )[wix_triger]
         
-        # Try to get OAuth token from env
-        oauth_token_str = os.getenv("GOOGLE_OAUTH_TOKEN")
-        oauth_token = None
-        if oauth_token_str:
-            try:
-                oauth_token = json.loads(oauth_token_str)
-            except Exception as e:
-                print(f"Warning: Failed to parse GOOGLE_OAUTH_TOKEN: {e}")
+        file_name = config["FILE_NAME"]
+        parquet_file_id = config["PARQUET_FILE_ID"]
+        excel_file_id = config["EXCEL_FILE_ID"]
+        filter_field = config["FILTER_FIELD"]
 
 
     except Exception as e:
         return error_response(f"Failed to load config: {str(e)}")
     
     # Validate folder ID
-    if not folder_id:
+    if not FOLDER_ID:
         return error_response("GOOGLE_DRIVE_FOLDER_ID not configured in environment variables")
     
     # Initialize Google Drive
     try:
         google_env = GoogleEnv(
-            auth_method = login_method,
-            oauth_token = oauth_token
+            auth_method = "oauth",
+            oauth_token = OAUTH_TOKEN
         )
-        drive = google_env.drive_service(main_folder_id=folder_id)
+        drive = google_env.drive_service(main_folder_id=FOLDER_ID)
     except Exception as e:
         return error_response(f"Failed to initialize Google Drive: {str(e)}")
     
@@ -101,12 +111,6 @@ def load_to_drive(request: FlaskRequest) -> FlaskResponse:
         parquet_file_id = drive.get_file_id(f"{file_name}.parquet")
         excel_file_id = drive.get_file_id(f"{file_name}.xlsx")
             
-    # Flatten the nested dictionary
-    flat_data = flat_dictionary(data.get('data', {}))
-    info = {
-        'flat_data': flat_data,
-        'raw_data': data
-    }
     # Upload JSON record to Drive
     try:
         json_buffer = BytesIO()
@@ -138,7 +142,7 @@ def load_to_drive(request: FlaskRequest) -> FlaskResponse:
                 update_df = is_new_data(
                     df,
                     flat_data,
-                    compare_col = compare_column
+                    compare_col = filter_field
                 )
                 print("Data is new:", update_df)
             else:
@@ -176,7 +180,7 @@ def load_to_drive(request: FlaskRequest) -> FlaskResponse:
         file_format: drive.upload_df_to_drive(
             df = df,
             file_name = file_name,
-            folder_id = folder_id,
+            folder_id = FOLDER_ID,
             file_format = file_format,
             file_id = file_id
         ) for file_format, file_id in formats_ids.items()
