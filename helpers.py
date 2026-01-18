@@ -5,10 +5,6 @@ PURPOSE: Helper functions for Wix Plan Sales data processing
 
 Author: Edward Toledo Lopez <edward_tl@hotmail.com>
 """
-
-from typing import Any
-from pathlib import Path
-import json
 import pandas as pd
 
 from flask import (
@@ -17,7 +13,6 @@ from flask import (
 )
 
 from flask_responses import error_response
-
 
 def is_valid_request(request: FlaskRequest) -> tuple[FlaskResponse, dict]:
     """

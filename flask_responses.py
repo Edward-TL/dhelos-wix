@@ -1,18 +1,10 @@
 
 from flask import Response as FlaskResponse
-from dotenv import load_dotenv
 import json
 import os
 import requests
 
-try:
-    load_dotenv()
-except Exception as e:
-    return error_response(
-        f"Failed to load environment variables: {str(e)}",
-        wix_source_flag="UNKNOWN"
-    )
-
+from loader import ENV_VALS
 
 def send_discord_message(message: str, level: str, wix_source_flag: str) -> None:
     """
@@ -23,8 +15,7 @@ def send_discord_message(message: str, level: str, wix_source_flag: str) -> None
         level (str): The log level (ERROR, SUCCESS, SKIPPED)
         wix_source_flag (str): The source identifier of the request
     """
-    webhook_url = os.getenv("DISCORD_WEBHOOK_URL")
-    if not webhook_url:
+    if not ENV_VALS.DISCORD_WEBHOOK_URL:
         print("WARNING: DISCORD_WEBHOOK_URL not configured. Skipping Discord notification.")
         return
 
@@ -32,7 +23,7 @@ def send_discord_message(message: str, level: str, wix_source_flag: str) -> None
     
     try:
         payload = {"content": formatted_message}
-        requests.post(webhook_url, json=payload)
+        requests.post(ENV_VALS.DISCORD_WEBHOOK_URL, json=payload)
     except Exception as e:
         print(f"Failed to send Discord notification: {str(e)}")
 

@@ -14,9 +14,6 @@ Author: Edward Toledo Lopez <edward_tl@hotmail.com>
 import os
 import json
 from io import BytesIO
-from pathlib import Path
-
-from dotenv import load_dotenv
 
 import pandas as pd
 from functions_framework import http as functions_http
@@ -33,6 +30,8 @@ from helpers import (
     is_new_data
 )
 
+from loader import ENV_VALS
+
 from flask_responses import (
     error_response,
     bad_resquest_response,
@@ -40,13 +39,6 @@ from flask_responses import (
     skipped_response
 )
 
-try:
-    load_dotenv()
-except Exception as e:
-    return error_response(
-        f"Failed to load environment variables: {str(e)}",
-        wix_source_flag="UNKNOWN"
-    )
 
 @functions_http
 def load_to_drive(request: FlaskRequest) -> FlaskResponse:
@@ -80,15 +72,7 @@ def load_to_drive(request: FlaskRequest) -> FlaskResponse:
 
     # Load configuration
     try:
-        OAUTH_TOKEN = json.loads(
-            os.getenv("OAUTH_TOKEN")
-        )
-        FOLDER_ID = os.getenv("GOOGLE_DRIVE_FOLDER_ID")
-
-        config = json.loads(
-            os.getenv("CONFIG")
-        )[wix_triger]
-        
+        config = ENV_VALS.CONFIG[wix_triger]
         file_name = config["FILE_NAME"]
         parquet_file_id = config["PARQUET_FILE_ID"]
         excel_file_id = config["EXCEL_FILE_ID"]
@@ -102,7 +86,7 @@ def load_to_drive(request: FlaskRequest) -> FlaskResponse:
         )
     
     # Validate folder ID
-    if not FOLDER_ID:
+    if not ENV_VALS.FOLDER_ID:
         return error_response(
             "GOOGLE_DRIVE_FOLDER_ID not configured in environment variables",
             wix_source_flag=wix_triger
@@ -112,9 +96,11 @@ def load_to_drive(request: FlaskRequest) -> FlaskResponse:
     try:
         google_env = GoogleEnv(
             auth_method = "oauth",
-            oauth_token = OAUTH_TOKEN
+            oauth_token = ENV_VALS.OAUTH_TOKEN
         )
-        drive = google_env.drive_service(main_folder_id=FOLDER_ID)
+        drive = google_env.drive_service(
+            main_folder_id = ENV_VALS.FOLDER_ID
+        )
     except Exception as e:
         return error_response(
             f"Failed to initialize Google Drive: {str(e)}",
@@ -202,7 +188,7 @@ def load_to_drive(request: FlaskRequest) -> FlaskResponse:
         file_format: drive.upload_df_to_drive(
             df = df,
             file_name = file_name,
-            folder_id = FOLDER_ID,
+            folder_id = ENV_VALS.FOLDER_ID,
             file_format = file_format,
             file_id = file_id
         ) for file_format, file_id in formats_ids.items()
