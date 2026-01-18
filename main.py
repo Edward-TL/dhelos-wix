@@ -68,7 +68,7 @@ def load_to_drive(request: FlaskRequest) -> FlaskResponse:
     wix_triger = flat_data.get('_context_trigger_key')
     if wix_triger is None:
         return bad_resquest_response(
-            f"Failed to extract `_context_trigger_key` from response: {str(e)}",
+            f"Failed to extract `_context_trigger_key` from request: {flat_data}",
             wix_source_flag="UNKNOWN"
         )
 
