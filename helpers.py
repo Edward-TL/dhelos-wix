@@ -26,6 +26,7 @@ def is_valid_request(request: FlaskRequest) -> tuple[FlaskResponse, dict]:
     if request.method != 'POST':
         bad_response = error_response(
             "Method not allowed. Use POST.",
+            origin_flag="VALIDATION",
             status=405
         )
 
@@ -39,6 +40,7 @@ def is_valid_request(request: FlaskRequest) -> tuple[FlaskResponse, dict]:
     except Exception as e:
         bad_response = error_response(
             f"Invalid JSON: {str(e)}",
+            origin_flag="VALIDATION",
             status=400
         )
     

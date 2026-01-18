@@ -68,7 +68,8 @@ def load_to_drive(request: FlaskRequest) -> FlaskResponse:
     wix_triger = flat_data.get('_context_trigger_key')
     if wix_triger is None:
         return bad_resquest_response(
-            f"Failed to extract `_context_trigger_key` from response: {str(e)}"
+            f"Failed to extract `_context_trigger_key` from response: {str(e)}",
+            wix_source_flag="UNKNOWN"
         )
 
     # Load configuration
@@ -89,11 +90,17 @@ def load_to_drive(request: FlaskRequest) -> FlaskResponse:
 
 
     except Exception as e:
-        return error_response(f"Failed to load config: {str(e)}")
+        return error_response(
+            f"Failed to load config: {str(e)}",
+            wix_source_flag=wix_triger
+        )
     
     # Validate folder ID
     if not FOLDER_ID:
-        return error_response("GOOGLE_DRIVE_FOLDER_ID not configured in environment variables")
+        return error_response(
+            "GOOGLE_DRIVE_FOLDER_ID not configured in environment variables",
+            wix_source_flag=wix_triger
+        )
     
     # Initialize Google Drive
     try:
@@ -103,7 +110,10 @@ def load_to_drive(request: FlaskRequest) -> FlaskResponse:
         )
         drive = google_env.drive_service(main_folder_id=FOLDER_ID)
     except Exception as e:
-        return error_response(f"Failed to initialize Google Drive: {str(e)}")
+        return error_response(
+            f"Failed to initialize Google Drive: {str(e)}",
+            wix_source_flag=wix_triger
+        )
     
     # Confirm the existence of the parquet_id:
     if parquet_file_id == "":
@@ -151,7 +161,10 @@ def load_to_drive(request: FlaskRequest) -> FlaskResponse:
                 df = pd.DataFrame()
                 update_df = True
         except Exception as e:
-            return error_response(f"Failed to download parquet: {str(e)}")
+            return error_response(
+                f"Failed to download parquet: {str(e)}",
+                wix_source_flag=wix_triger
+            )
     else:
         # Step 2.b: File does not exist
         print("Parquet file DOES NOT EXIST. Creating new file...")
@@ -163,7 +176,10 @@ def load_to_drive(request: FlaskRequest) -> FlaskResponse:
     
     # Step 3.a: If update is not needed
     if not update_df:
-        return skipped_response("Data already exists in file")
+        return skipped_response(
+            "Data already exists in file",
+            wix_source_flag=wix_triger
+        )
     
     # Step 3.b: Update DataFrame if needed
     # Append new data
@@ -190,5 +206,6 @@ def load_to_drive(request: FlaskRequest) -> FlaskResponse:
 
     return success_response(
         "Data added",
+        wix_source_flag=wix_triger,
         data=response
     )
