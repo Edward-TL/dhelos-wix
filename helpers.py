@@ -12,7 +12,7 @@ from flask import (
     Request as FlaskRequest
 )
 
-from flask_responses import error_response
+from response_handler import error_response
 
 def is_valid_request(request: FlaskRequest) -> tuple[FlaskResponse, dict]:
     """

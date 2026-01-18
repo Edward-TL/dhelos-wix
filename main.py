@@ -32,7 +32,7 @@ from helpers import (
 
 from loader import ENV_VALS
 
-from flask_responses import (
+from response_handler import (
     error_response,
     bad_resquest_response,
     success_response,
