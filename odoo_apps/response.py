@@ -17,6 +17,22 @@ from .request import (
     )
 from .utils.cleaning import generate_dict
 
+# Import response handler functions from parent package
+try:
+    from ..response_handler import (
+        error_response,
+        bad_resquest_response,
+        success_response,
+        skipped_response
+    )
+except ImportError:
+    # Fallback for when running as standalone module
+    import response_handler
+    error_response = response_handler.error_response
+    bad_resquest_response = response_handler.bad_resquest_response
+    success_response = response_handler.success_response
+    skipped_response = response_handler.skipped_response
+
 status_code_idea = {
     201: 'Success on creating',
     200: 'Object found/Action completed',
@@ -24,6 +40,17 @@ status_code_idea = {
     404: 'Request is OK. Object was not found',
     406: 'ValueError type on request values',
     409: 'Request is OK. Object has a conflict (overlaps/busy/taken)'
+}
+
+# Map status codes to their corresponding response_handler functions
+RESPONSE_HANDLER_MAP = {
+    200: success_response,      # OK - Object found/Action completed
+    201: success_response,      # CREATED - Success on creating
+    400: bad_resquest_response, # BAD REQUEST - Request does not have all values needed
+    404: bad_resquest_response, # NOT FOUND - Request is OK. Object was not found
+    406: error_response,        # NOT ACCEPTABLE - ValueError type on request values
+    409: error_response,        # CONFLICT - Request is OK. Object has a conflict
+    500: error_response         # INTERNAL SERVER ERROR - General error fallback
 }
 
 meaning_code = {
