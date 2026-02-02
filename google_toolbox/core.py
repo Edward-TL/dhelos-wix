@@ -13,6 +13,7 @@ from google.oauth2 import service_account
 from google.oauth2.credentials import Credentials as OAuthCredentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
+from google.cloud import secretmanager
 
 import gspread
 
@@ -45,6 +46,71 @@ def get_env_vars(filepath: str = None) -> dict:
     return env_dict
 
 
+def refresh_and_update_token(
+    creds: OAuthCredentials,
+    project_id: Optional[str] = None,
+    secret_name: Optional[str] = None
+) -> OAuthCredentials:
+    """
+    Refresh an expired OAuth token and optionally update it in Google Secret Manager.
+    
+    Args:
+        creds: The OAuth credentials to refresh
+        project_id: GCP project ID for Secret Manager (optional)
+        secret_name: Name of the secret to update (optional)
+    
+    Returns:
+        Refreshed OAuth credentials
+    
+    Raises:
+        Exception: If token refresh fails
+    """
+    print("[OAuth] Refreshing expired token...")
+    
+    try:
+        # Refresh the token
+        creds.refresh(Request())
+        print("[OAuth] Token refreshed successfully")
+        
+        # Update Secret Manager if configured
+        if project_id and secret_name:
+            try:
+                print(f"[Secret Manager] Updating secret '{secret_name}'...")
+                
+                # Create Secret Manager client
+                client = secretmanager.SecretManagerServiceClient()
+                
+                # Prepare the secret payload
+                token_json = creds.to_json()
+                payload = token_json.encode('UTF-8')
+                
+                # Build the parent secret name
+                parent = client.secret_path(project_id, secret_name)
+                
+                # Add new secret version
+                response = client.add_secret_version(
+                    request={
+                        "parent": parent,
+                        "payload": {"data": payload}
+                    }
+                )
+                
+                print(f"[Secret Manager] Secret updated successfully: {response.name}")
+                
+            except Exception as secret_error:
+                # Log but don't fail - token is still refreshed
+                print(f"[Secret Manager] Warning: Failed to update secret: {secret_error}")
+                print("[Secret Manager] Token was refreshed but not persisted to Secret Manager")
+        else:
+            print("[Secret Manager] No project_id/secret_name provided, skipping secret update")
+        
+        return creds
+        
+    except Exception as e:
+        print(f"[OAuth] Failed to refresh token: {e}")
+        raise
+
+
 @dataclass
 class DriveScopes:
     DRIVE: str = 'https://www.googleapis.com/auth/drive'
@@ -69,6 +135,9 @@ class GoogleEnv:
         DriveScopes.DRIVE,
         DriveScopes.SHEETS,
     ))
+    # Secret Manager configuration for OAuth token refresh
+    secret_project_id: Optional[str] = None
+    secret_name: Optional[str] = None
     
     # These will be set in __post_init__
     credentials: service_account.Credentials = field(init=False, default=None)
@@ -131,55 +200,72 @@ class GoogleEnv:
     def _load_oauth_credentials(self):
         """Load credentials using OAuth 2.0 authentication.
         
-        Uses InstalledAppFlow for client credentials JSON files.
-        On first run, opens a browser for user authorization.
-        Caches the token for subsequent use.
+        Uses InstalledAppFlow for client credentials JSON files if no token is available.
+        Checks for token expiration and refreshes if a refresh_token is present.
         """
-        # 0. Check if token is provided directly
-        if self.oauth_token:
-            self.credentials = OAuthCredentials.from_authorized_user_info(self.oauth_token, list(self.scopes))
-            self.creds_with_scope = self.credentials
-            return
-
-        # Determine token cache path
-        if self.json_credentials:
-            token_path = self.json_credentials.replace('.json', '_token.json')
-        else:
-            token_path = 'token.json'
-        
         creds = None
+        token_path = None
+
+        # 1. Try to load token from oauth_token (direct dict/string)
+        if self.oauth_token:
+            creds = OAuthCredentials.from_authorized_user_info(self.oauth_token, list(self.scopes))
         
-        # Try to load cached token
-        if os.path.exists(token_path):
-            try:
-                creds = OAuthCredentials.from_authorized_user_file(token_path, list(self.scopes))
-            except ValueError as e:
-                # Token file is corrupted or missing required fields (like refresh_token)
-                print(f"Invalid cached token, will re-authenticate: {e}")
-                os.remove(token_path)
-                creds = None
-        
-        # If no valid credentials, run the OAuth flow
-        if not creds or not creds.valid:
-            if creds and creds.expired and creds.refresh_token:
-                creds.refresh(Request())
+        # 2. If no token yet, try to load cached token from file
+        else:
+            # Determine token cache path
+            if self.json_credentials:
+                token_path = self.json_credentials.replace('.json', '_token.json')
             else:
-                # Need to run OAuth flow with client credentials file
-                if not self.json_credentials:
-                    raise ValueError(
-                        "OAuth requires a client credentials JSON file. "
-                        "Provide 'json_credentials' parameter with path to your OAuth client file."
-                    )
-                flow = InstalledAppFlow.from_client_secrets_file(
-                    self.json_credentials, 
-                    scopes=list(self.scopes)
-                )
-                # Use fixed port 8080 - add http://localhost:8080/ to OAuth redirect URIs in Google Cloud Console
-                # access_type='offline' ensures we get a refresh_token
-                creds = flow.run_local_server(port=8080, access_type='offline', prompt='consent')
+                token_path = 'token.json'
             
-            # Save token for next run
-            with open(token_path, 'w') as token_file:
+            if os.path.exists(token_path):
+                try:
+                    creds = OAuthCredentials.from_authorized_user_file(token_path, list(self.scopes))
+                except ValueError as e:
+                    # Token file is corrupted or missing required fields
+                    print(f"Invalid cached token: {e}")
+                    creds = None
+
+        # 3. Check validity and refresh if needed
+        if creds and creds.expired and creds.refresh_token:
+            try:
+                # Use the new refresh function with Secret Manager support
+                creds = refresh_and_update_token(
+                    creds,
+                    project_id=self.secret_project_id,
+                    secret_name=self.secret_name
+                )
+                
+                # If we loaded from a file, update it (local development)
+                if token_path and os.path.exists(token_path):
+                     with open(token_path, 'w') as token_file:
+                        token_file.write(creds.to_json())
+            except Exception as e:
+                print(f"Failed to refresh token: {e}")
+                creds = None
+
+        # 4. If still no valid credentials, run the OAuth flow (if possible)
+        if not creds or not creds.valid:
+            if not self.json_credentials:
+                # In serverless, we usually can't run the flow
+                if self.oauth_token:
+                    raise ValueError("OAuth token is expired and refresh failed. Please generate a new token.")
+                raise ValueError(
+                    "OAuth requires a client credentials JSON file for the initial flow. "
+                    "Provide 'json_credentials' parameter with path to your OAuth client file."
+                )
+            
+            print("Starting OAuth flow...")
+            flow = InstalledAppFlow.from_client_secrets_file(
+                self.json_credentials, 
+                scopes=list(self.scopes)
+            )
+            # access_type='offline' ensures we get a refresh_token
+            creds = flow.run_local_server(port=8080, access_type='offline', prompt='consent')
+            
+            # Save token for next run if we have a path
+            path_to_save = token_path or (self.json_credentials.replace('.json', '_token.json') if self.json_credentials else 'token.json')
+            with open(path_to_save, 'w') as token_file:
                 token_file.write(creds.to_json())
         
         self.credentials = creds

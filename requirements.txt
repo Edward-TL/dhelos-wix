@@ -2,6 +2,7 @@ functions-framework
 flask
 google-api-python-client
 google-auth
+google-cloud-secret-manager
 openpyxl
 pandas
 pyarrow

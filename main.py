@@ -96,7 +96,9 @@ def load_to_drive(request: FlaskRequest) -> FlaskResponse:
     try:
         google_env = GoogleEnv(
             auth_method = "oauth",
-            oauth_token = ENV_VALS.OAUTH_TOKEN
+            oauth_token = ENV_VALS.OAUTH_TOKEN,
+            secret_project_id = ENV_VALS.SECRET_PROJECT_ID,
+            secret_name = ENV_VALS.SECRET_NAME
         )
         drive = google_env.drive_service(
             main_folder_id = ENV_VALS.FOLDER_ID
