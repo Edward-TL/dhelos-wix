@@ -19,7 +19,7 @@ def send_discord_message(message: str, level: str, wix_source_flag: str) -> None
         print("WARNING: DISCORD_WEBHOOK_URL not configured. Skipping Discord notification.")
         return
 
-    formatted_message = f"{level} | {wix_source_flag} --> {message}"
+    formatted_message = f"[{level}] {wix_source_flag} --> {message}"
     
     try:
         payload = {"content": formatted_message}
@@ -88,3 +88,46 @@ def skipped_response(message: str, wix_source_flag: str, status: int = 200) -> F
         status=status,
         mimetype='application/json'
     )
+
+# Response handler mapping based on status codes
+RESPONSE_HANDLER_MAP = {
+    200: skipped_response,      # OK - Object found/Action completed
+    201: success_response,      # CREATED - Success on creating
+    400: bad_resquest_response, # BAD REQUEST - Request does not have all values needed
+    404: bad_resquest_response, # NOT FOUND - Request is OK. Object was not found
+    406: error_response,        # NOT ACCEPTABLE - ValueError type on request values
+    409: error_response,        # CONFLICT - Request is OK. Object has a conflict
+    500: error_response         # INTERNAL SERVER ERROR - General error fallback
+}
+
+def handle_response(message: str, wix_source_flag: str, status: int, data: dict = None) -> FlaskResponse:
+    """
+    Unified response handler that routes to the correct response function based on status code.
+    
+    Args:
+        message (str): The message content
+        wix_source_flag (str): The source identifier of the request
+        status (int): HTTP status code (200, 201, 400, 404, 406, 409, 500)
+        data (dict, optional): Additional data to include in success responses
+    
+    Returns:
+        FlaskResponse: Flask response object with appropriate status and message
+    
+    Raises:
+        ValueError: If status code is not supported
+    """
+    if status not in RESPONSE_HANDLER_MAP:
+        # Default to error_response for unknown status codes
+        print(f"WARNING: Unknown status code {status}, defaulting to error_response")
+        return error_response(f"Unknown status code: {status}. {message}", wix_source_flag, status)
+    
+    handler_func = RESPONSE_HANDLER_MAP[status]
+    
+    # success_response is the only function that accepts a 'data' parameter
+    if handler_func == success_response and data is not None:
+        return success_response(message, wix_source_flag, data, status)
+    elif handler_func == success_response:
+        return success_response(message, wix_source_flag, None, status)
+    else:
+        return handler_func(message, wix_source_flag, status)
+

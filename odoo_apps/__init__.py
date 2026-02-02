@@ -1,4 +1,1 @@
-from dhelos_wix.response_handler import (
-    error_response,
-    success_response
-)
+from dhelos_wix.response_handler import send_discord_message

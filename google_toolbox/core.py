@@ -131,55 +131,68 @@ class GoogleEnv:
     def _load_oauth_credentials(self):
         """Load credentials using OAuth 2.0 authentication.
         
-        Uses InstalledAppFlow for client credentials JSON files.
-        On first run, opens a browser for user authorization.
-        Caches the token for subsequent use.
+        Uses InstalledAppFlow for client credentials JSON files if no token is available.
+        Checks for token expiration and refreshes if a refresh_token is present.
         """
-        # 0. Check if token is provided directly
-        if self.oauth_token:
-            self.credentials = OAuthCredentials.from_authorized_user_info(self.oauth_token, list(self.scopes))
-            self.creds_with_scope = self.credentials
-            return
-
-        # Determine token cache path
-        if self.json_credentials:
-            token_path = self.json_credentials.replace('.json', '_token.json')
-        else:
-            token_path = 'token.json'
-        
         creds = None
+        token_path = None
+
+        # 1. Try to load token from oauth_token (direct dict/string)
+        if self.oauth_token:
+            creds = OAuthCredentials.from_authorized_user_info(self.oauth_token, list(self.scopes))
         
-        # Try to load cached token
-        if os.path.exists(token_path):
-            try:
-                creds = OAuthCredentials.from_authorized_user_file(token_path, list(self.scopes))
-            except ValueError as e:
-                # Token file is corrupted or missing required fields (like refresh_token)
-                print(f"Invalid cached token, will re-authenticate: {e}")
-                os.remove(token_path)
-                creds = None
-        
-        # If no valid credentials, run the OAuth flow
-        if not creds or not creds.valid:
-            if creds and creds.expired and creds.refresh_token:
-                creds.refresh(Request())
+        # 2. If no token yet, try to load cached token from file
+        else:
+            # Determine token cache path
+            if self.json_credentials:
+                token_path = self.json_credentials.replace('.json', '_token.json')
             else:
-                # Need to run OAuth flow with client credentials file
-                if not self.json_credentials:
-                    raise ValueError(
-                        "OAuth requires a client credentials JSON file. "
-                        "Provide 'json_credentials' parameter with path to your OAuth client file."
-                    )
-                flow = InstalledAppFlow.from_client_secrets_file(
-                    self.json_credentials, 
-                    scopes=list(self.scopes)
-                )
-                # Use fixed port 8080 - add http://localhost:8080/ to OAuth redirect URIs in Google Cloud Console
-                # access_type='offline' ensures we get a refresh_token
-                creds = flow.run_local_server(port=8080, access_type='offline', prompt='consent')
+                token_path = 'token.json'
             
-            # Save token for next run
-            with open(token_path, 'w') as token_file:
+            if os.path.exists(token_path):
+                try:
+                    creds = OAuthCredentials.from_authorized_user_file(token_path, list(self.scopes))
+                except ValueError as e:
+                    # Token file is corrupted or missing required fields
+                    print(f"Invalid cached token: {e}")
+                    creds = None
+
+        # 3. Check validity and refresh if needed
+        if creds and creds.expired and creds.refresh_token:
+            try:
+                print("Refreshing expired OAuth token...")
+                creds.refresh(Request())
+                
+                # If we loaded from a file, update it
+                if token_path and os.path.exists(token_path):
+                     with open(token_path, 'w') as token_file:
+                        token_file.write(creds.to_json())
+            except Exception as e:
+                print(f"Failed to refresh token: {e}")
+                creds = None
+
+        # 4. If still no valid credentials, run the OAuth flow (if possible)
+        if not creds or not creds.valid:
+            if not self.json_credentials:
+                # In serverless, we usually can't run the flow
+                if self.oauth_token:
+                    raise ValueError("OAuth token is expired and refresh failed. Please generate a new token.")
+                raise ValueError(
+                    "OAuth requires a client credentials JSON file for the initial flow. "
+                    "Provide 'json_credentials' parameter with path to your OAuth client file."
+                )
+            
+            print("Starting OAuth flow...")
+            flow = InstalledAppFlow.from_client_secrets_file(
+                self.json_credentials, 
+                scopes=list(self.scopes)
+            )
+            # access_type='offline' ensures we get a refresh_token
+            creds = flow.run_local_server(port=8080, access_type='offline', prompt='consent')
+            
+            # Save token for next run if we have a path
+            path_to_save = token_path or (self.json_credentials.replace('.json', '_token.json') if self.json_credentials else 'token.json')
+            with open(path_to_save, 'w') as token_file:
                 token_file.write(creds.to_json())
         
         self.credentials = creds
